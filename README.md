@@ -1,4 +1,4 @@
-# ColorMatchTemplate
+# ColorMatchTemplate : match template in color
  Search for matches between a color image patch and an input color image
 
 
