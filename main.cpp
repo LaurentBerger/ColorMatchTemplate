@@ -33,30 +33,29 @@ void qconj(InputArray _img, OutputArray _qimg)
 void qunitary(InputArray _img, OutputArray _qimg)
 {
     int type = _img.type(), depth = CV_MAT_DEPTH(type), cn = CV_MAT_CN(type);
-    CV_Assert((depth == CV_32F || depth == CV_64F) && _img.dims() == 2 && cn == 4);
+    CV_Assert((depth == CV_64F) && _img.dims() == 2 && cn == 4);
     vector<Mat> qplane(4), plane;
     split(_img, plane);
     qplane[0] = plane[0].clone();
-    qplane[1] = -plane[1].clone();
-    qplane[2] = -plane[2].clone();
-    qplane[3] = -plane[3].clone();
-    float *ptr0 = qplane[0].ptr<float>(0, 0), *ptr1 = qplane[1].ptr<float>(0, 0);
-    float *ptr2 = qplane[2].ptr<float>(0, 0), *ptr3 = qplane[3].ptr<float>(0, 0);
+    qplane[1] = plane[1].clone();
+    qplane[2] = plane[2].clone();
+    qplane[3] = plane[3].clone();
+    double *ptr0 = qplane[0].ptr<double>(0, 0), *ptr1 = qplane[1].ptr<double>(0, 0);
+    double *ptr2 = qplane[2].ptr<double>(0, 0), *ptr3 = qplane[3].ptr<double>(0, 0);
     int nb = plane[0].rows*plane[0].cols;
     for (int i = 0; i < nb; i++, ptr0++, ptr1++, ptr2++, ptr3++)
     {
-        float d = *ptr0 * *ptr0 + *ptr1 * *ptr1 + *ptr2 * *ptr2 + *ptr3 * *ptr3;
-        d = 1; // sqrt(d);
+        double d = *ptr0 * *ptr0 + *ptr1 * *ptr1 + *ptr2 * *ptr2 + *ptr3 * *ptr3;
+        d = 1/ sqrt(d);
         *ptr0 *= d;
         *ptr1 *= d;
         *ptr2 *= d;
         *ptr3 *= d;
-
     }
     merge(qplane, _qimg);
 }
 
-void QDFT(InputArray _img, OutputArray _qimg, int  	flags,bool sideLeft )
+void QFFT2(InputArray _img, OutputArray _qimg, int  	flags,bool sideLeft )
 {
 //    CV_INSTRUMENT_REGION()
 
@@ -101,13 +100,14 @@ void QDFT(InputArray _img, OutputArray _qimg, int  	flags,bool sideLeft )
     split(C2, vc2);
     vector<Mat> qdft(4);
     qdft[0] = vc1[0].clone();
-    qdft[1] = vc1[1] / sqrt(3) - 2*vc2[1]/sqrt(6);
-    qdft[2] = vc1[1] / sqrt(3) + vc2[0] / sqrt(2) + vc2[1] / sqrt(6);
-    qdft[3] = c*(vc1[1] / sqrt(3) - vc2[0] / sqrt(2) + vc2[1] / sqrt(6));
+    qdft[1] = vc1[1] / sqrt(3) - c*2*vc2[1]/sqrt(6);
+    qdft[2] = vc1[1] / sqrt(3) + vc2[0] / sqrt(2) + c*vc2[1] / sqrt(6);
+    qdft[3] = vc1[1] / sqrt(3) - vc2[0] / sqrt(2) + c*vc2[1] / sqrt(6);
     Mat dst0;
     merge(qdft, dst0);
     dst0.copyTo(_qimg);
 }
+
 
 void qmultiply(InputArray  	src1, InputArray  	src2, OutputArray  	dst)
 {
@@ -155,37 +155,32 @@ void qmultiply(InputArray  	src1, InputArray  	src2, OutputArray  	dst)
 void colorMatchTemplate(InputArray _image, InputArray _templ, OutputArray _result)
 {
     Mat image = _image.getMat(),imageF;
-    Mat colorTemplate = _templ.getMat();
-    int rr = getOptimalDFTSize(image.rows);
-    int cc = getOptimalDFTSize(image.cols);
-    rr = max(rr, cc);
-    cc = getOptimalDFTSize(colorTemplate.rows);
-    rr = max(rr, cc);
-    cc = getOptimalDFTSize(colorTemplate.cols);
-    rr = max(rr, cc);
-    Mat logo(rr, rr, CV_64FC3, Scalar::all(0));
-    Mat img = Mat(rr, rr, CV_64FC3, Scalar::all(0));
-    Scalar x = mean(colorTemplate);
-    colorTemplate.convertTo(colorTemplate, CV_64F, 1 / 256.),
-    subtract(colorTemplate, x / 256., colorTemplate);
-    colorTemplate.copyTo(logo(Rect(0, 0, colorTemplate.cols, colorTemplate.rows)));
+    Mat colorTemplate = _templ.getMat(), colorTemplateF;
+    int rr = max(getOptimalDFTSize(image.rows), getOptimalDFTSize(colorTemplate.rows));
+    int cc = max(getOptimalDFTSize(image.cols), getOptimalDFTSize(colorTemplate.cols));
+    Mat logo(rr, cc, CV_64FC3, Scalar::all(0));
+    Mat img = Mat(rr, cc, CV_64FC3, Scalar::all(0));
+    colorTemplate.convertTo(colorTemplateF, CV_64F, 1 / 256.),
+    colorTemplateF.copyTo(logo(Rect(0, 0, colorTemplate.cols, colorTemplate.rows)));
     image.convertTo(imageF, CV_64F, 1 / 256.);
-    subtract(imageF, x / 256., imageF);
     imageF.copyTo(img(Rect(0, 0, image.cols, image.rows)));
+    Scalar x = mean(logo);
+//    subtract(logo, x / 256., logo);
+//    subtract(img, x / 256., img);
     Mat qimg, qlogo;
     Mat qimgFFT, qimgIFFT, qlogoFFT;
     // Create quaternion image
     createQuaternionImage(img, qimg);
     createQuaternionImage(logo, qlogo);
     // quaternion fourier transform
-    QDFT(qimg, qimgFFT, 0, true);
-    QDFT(qimg, qimgIFFT, DFT_INVERSE, true);
-    QDFT(qlogo, qlogoFFT, 0, false);
+    QFFT2(qimg, qimgFFT, 0, true);
+    QFFT2(qimg, qimgIFFT,DFT_INVERSE, true);
+    QFFT2(qlogo, qlogoFFT, 0, false);
     double sqrtnn = sqrt(static_cast<int>(qimgFFT.rows*qimgFFT.cols));
     qimgFFT /= sqrtnn;
     qimgIFFT *= sqrtnn;
     qlogoFFT /= sqrtnn;
-    Mat mu(1, 1, CV_64FC4, Scalar(0, 1, 1, 1));
+    Mat mu(1, 1, CV_64FC4, Scalar(0, 1, 1, 1)/sqrt(3.));
     Mat qtmp, qlogopara, qlogoortho;
     qmultiply(mu, qlogoFFT, qtmp);
     qmultiply(qtmp, mu, qtmp);
@@ -200,7 +195,7 @@ void colorMatchTemplate(InputArray _image, InputArray _templ, OutputArray _resul
     Mat pwsp = qcross1 + qcross2;
     Mat crossCorr, pwspUnitary;
     qunitary(pwsp, pwspUnitary);
-    QDFT(pwspUnitary, crossCorr, DFT_INVERSE, true);
+    QFFT2(pwspUnitary, crossCorr, DFT_INVERSE, false);
     vector<Mat> p;
     split(crossCorr, p);
     Mat imgcorr = (p[0].mul(p[0]) + p[1].mul(p[1]) + p[2].mul(p[2]) + p[3].mul(p[3]));
@@ -230,6 +225,11 @@ void UpdateThreshImage(int x, void *r)
     threshold(p->img, dst, p->thresh, 255, THRESH_BINARY);
     imshow("Max Quaternion corr",dst);
 }
+template <typename T_>  int TestVec(T_ &x)
+{
+    return static_cast<int>( x[0]+1);
+
+}
 
 int main(int argc, char *argv[])
 {
@@ -238,8 +238,8 @@ int main(int argc, char *argv[])
 #ifdef TESTMATCHING
     Mat imgLogo = imread("g:/lib/opencv/samples/data/opencv-logo.png", IMREAD_COLOR);
     Mat fruits = imread("g:/lib/opencv/samples/data/lena.jpg", IMREAD_COLOR);
-//    fruits = fruits * 0;
-    resize(fruits,fruits, Size(), 0.5, 0.5);
+    fruits = fruits * 0;
+//    resize(fruits,fruits, Size(), 0.5, 0.5);
     Mat img,colorTemplate;
     imgLogo(Rect(0, 0, imgLogo.cols, 580)).copyTo(img);
     resize(img, colorTemplate, Size(), 0.05, 0.05);
@@ -254,19 +254,22 @@ int main(int argc, char *argv[])
     RNG r;
     for (int i = 0; i < 16; i++)
     {
-        Point p(i / 4 * 65+10, (i % 4) * 65+10);
+        Point p(i / 4 * 130 + 10, (i % 4) * 130 + 10);
+        //Point p(360, 220);
         Mat newLogo= colorTemplate.clone();
-        if (i % 3 != 2)
+        if (i % 7 != 1)
         {
-            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[i % 4]);
-            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[(i + 1) % 4]);
+//            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[i % 4]);
+//             newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[(i + 1) % 4]);
         }
-            newLogo.copyTo(fruits(Rect(p.x, p.y, colorTemplate.cols, colorTemplate.rows)));
+        else 
+//           newLogo.copyTo(fruits(Rect(p.x, p.y, newLogo.cols, newLogo.rows)));
+                    newLogo.copyTo(fruits(Rect(p.x, p.y, newLogo.cols, newLogo.rows)));
 
     }
 #else
-    Mat fruits = imread("15214713881857319.png", IMREAD_COLOR);
-    Mat colorTemplate = imread("15214714019776815.png", IMREAD_COLOR);
+    Mat fruits = imread("c2.png", IMREAD_COLOR);
+    Mat colorTemplate = imread("c1.png", IMREAD_COLOR);
     Mat img= colorTemplate;
 #endif
     imshow("Image", fruits);
@@ -280,6 +283,7 @@ int main(int argc, char *argv[])
     Mat imgcorr;
     SliderData p;
     colorMatchTemplate(fruits, colorTemplate, imgcorr);
+    imshow("quaternion correlation real", imgcorr);
     normalize(imgcorr, imgcorr,1,0,NORM_MINMAX);
     imgcorr.convertTo(p.img, CV_8U, 255);
     imshow("quaternion correlation", imgcorr);
