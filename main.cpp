@@ -1,4 +1,4 @@
-#include <opencv2/opencv.hpp>
+﻿#include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc.hpp>
 
 using namespace std;
@@ -215,14 +215,33 @@ void AddSlider(String sliderName, String windowName, int minSlider, int maxSlide
 struct SliderData { 
     Mat img;
     int thresh;
+    vector<Point> pRef;
 };
 
 void UpdateThreshImage(int x, void *r)
 {
     SliderData *p = (SliderData*)r;
-    Mat dst;
+    Mat dst,labels,stats,centroids;
 
     threshold(p->img, dst, p->thresh, 255, THRESH_BINARY);
+
+    connectedComponentsWithStats(dst, labels, stats, centroids, 8);
+    if (centroids.rows < 10)
+    {
+        cout << "**********************************************************************************\n";
+        for (int i = 0; i < p->pRef.size(); i++)
+        {
+            cout << p->pRef[i] << "\n";
+        }
+        cout << "---\n";
+        for (int i = 0; i < centroids.rows; i++)
+        {
+            cout << dst.cols - centroids.at<double>(i, 0)  << " ";
+            cout << dst.rows -  centroids.at<double>(i, 1)  << "\n";
+        }
+        cout << "----------------------------------------------------------------------------------\n";
+    }
+
     imshow("Max Quaternion corr",dst);
 }
 template <typename T_>  int TestVec(T_ &x)
@@ -238,7 +257,7 @@ int main(int argc, char *argv[])
 #ifdef TESTMATCHING
     Mat imgLogo = imread("g:/lib/opencv/samples/data/opencv-logo.png", IMREAD_COLOR);
     Mat fruits = imread("g:/lib/opencv/samples/data/lena.jpg", IMREAD_COLOR);
-    fruits = fruits * 0;
+    fruits = fruits ;
 //    resize(fruits,fruits, Size(), 0.5, 0.5);
     Mat img,colorTemplate;
     imgLogo(Rect(0, 0, imgLogo.cols, 580)).copyTo(img);
@@ -252,19 +271,21 @@ int main(int argc, char *argv[])
     inRange(colorTemplate, Vec3b( 0, 0,255), Vec3b( 0, 0,255), colorMask[2]);
     colorMask[3] = Mat(colorTemplate.size(), CV_8UC3, Scalar(255));
     RNG r;
+    SliderData ps;
     for (int i = 0; i < 16; i++)
     {
-        Point p(i / 4 * 130 + 10, (i % 4) * 130 + 10);
-        //Point p(360, 220);
+       Point p(i / 4 * 130 + 10, (i % 4) * 130 + 10);
+////       Point p(320, 320);
         Mat newLogo= colorTemplate.clone();
-        if (i % 7 != 1)
+        if (i % 6 != 5)
         {
-//            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[i % 4]);
-//             newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[(i + 1) % 4]);
+            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[i % 4]);
+            newLogo.setTo(Scalar(r.uniform(0, 256), r.uniform(0, 256), r.uniform(0, 256)), colorMask[(i + 1) % 4]);
         }
-        else 
-//           newLogo.copyTo(fruits(Rect(p.x, p.y, newLogo.cols, newLogo.rows)));
-                    newLogo.copyTo(fruits(Rect(p.x, p.y, newLogo.cols, newLogo.rows)));
+        else
+            ps.pRef.push_back(p);
+//        else 
+           newLogo.copyTo(fruits(Rect(p.x, p.y, newLogo.cols, newLogo.rows)));
 
     }
 #else
@@ -281,14 +302,13 @@ int main(int argc, char *argv[])
         return 0;
     }
     Mat imgcorr;
-    SliderData p;
     colorMatchTemplate(fruits, colorTemplate, imgcorr);
     imshow("quaternion correlation real", imgcorr);
     normalize(imgcorr, imgcorr,1,0,NORM_MINMAX);
-    imgcorr.convertTo(p.img, CV_8U, 255);
+    imgcorr.convertTo(ps.img, CV_8U, 255);
     imshow("quaternion correlation", imgcorr);
     int level = 200;
-    AddSlider("Level", "quaternion correlation", 0, 255, p.thresh, &p.thresh, UpdateThreshImage, &p);
+    AddSlider("Level", "quaternion correlation", 0, 255, ps.thresh, &ps.thresh, UpdateThreshImage, &ps);
     int code = 0;
     while (code != 27)
     {
